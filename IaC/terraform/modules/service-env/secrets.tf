@@ -5,13 +5,11 @@ resource "random_password" "db_password" {
 
 resource "google_secret_manager_secret" "db_password" {
   project   = var.project_id
-  secret_id = "db-password"
+  secret_id = "db-password-${var.env_name}"
 
   replication {
     auto {}
   }
-
-  depends_on = [google_project_service.secretmanager]
 }
 
 resource "google_secret_manager_secret_version" "db_password" {

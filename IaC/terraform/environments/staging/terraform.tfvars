@@ -1,6 +1,6 @@
 project_id = "pocket-av"
 region     = "us-central1"
-env_name   = "prod"
+env_name   = "staging"
 db_tier    = "db-f1-micro"
 db_version = "POSTGRES_16"
 db_name    = "keycache"

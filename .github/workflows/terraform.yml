@@ -1,0 +1,232 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "IaC/terraform/**"
+  push:
+    branches: [main]
+    paths:
+      - "IaC/terraform/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to plan/apply"
+        required: true
+        type: choice
+        options:
+          - shared
+          - prod
+          - staging
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+# --------------------------------------------------------------------------
+# Detect which environment dirs changed
+# --------------------------------------------------------------------------
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.set-envs.outputs.environments }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: set-envs
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo 'environments=["${{ inputs.environment }}"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          envs="[]"
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            changed=$(git diff --name-only HEAD~1 HEAD -- IaC/terraform/ || true)
+          else
+            changed=$(git diff --name-only origin/main...HEAD -- IaC/terraform/ || true)
+          fi
+
+          shared=false
+          prod=false
+          staging=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              IaC/terraform/environments/shared/*) shared=true ;;
+              IaC/terraform/environments/prod/*)   prod=true ;;
+              IaC/terraform/environments/staging/*) staging=true ;;
+              IaC/terraform/modules/*)
+                # Module changes affect all env consumers
+                prod=true
+                staging=true
+                ;;
+            esac
+          done <<< "$changed"
+
+          result=()
+          [[ "$shared" == "true" ]] && result+=("shared")
+          [[ "$prod" == "true" ]] && result+=("prod")
+          [[ "$staging" == "true" ]] && result+=("staging")
+
+          # Build JSON array
+          json="["
+          for i in "${!result[@]}"; do
+            [[ $i -gt 0 ]] && json+=","
+            json+="\"${result[$i]}\""
+          done
+          json+="]"
+
+          echo "environments=$json" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------------
+  # Plan
+  # --------------------------------------------------------------------------
+  plan:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.environments != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+    concurrency:
+      group: terraform-${{ matrix.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.12"
+
+      - name: Terraform Init
+        working-directory: IaC/terraform/environments/${{ matrix.environment }}
+        run: terraform init
+
+      - name: Terraform Format Check
+        working-directory: IaC/terraform/environments/${{ matrix.environment }}
+        run: terraform fmt -check
+
+      - name: Terraform Validate
+        working-directory: IaC/terraform/environments/${{ matrix.environment }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: IaC/terraform/environments/${{ matrix.environment }}
+        run: terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planPath = 'IaC/terraform/environments/${{ matrix.environment }}/plan_output.txt';
+            let plan = fs.readFileSync(planPath, 'utf8');
+
+            // Truncate if too long for a PR comment
+            const maxLen = 60000;
+            if (plan.length > maxLen) {
+              plan = plan.substring(0, maxLen) + '\n\n... (truncated)';
+            }
+
+            const body = `### Terraform Plan: \`${{ matrix.environment }}\`
+
+            <details><summary>Show plan</summary>
+
+            \`\`\`
+            ${plan}
+            \`\`\`
+
+            </details>`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body,
+            });
+
+  # --------------------------------------------------------------------------
+  # Apply — only on push to main or workflow_dispatch
+  # --------------------------------------------------------------------------
+  apply-shared:
+    needs: [detect-changes, plan]
+    if: |
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      contains(fromJson(needs.detect-changes.outputs.environments), 'shared')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-shared
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.12"
+
+      - name: Terraform Init
+        working-directory: IaC/terraform/environments/shared
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: IaC/terraform/environments/shared
+        run: terraform apply -auto-approve
+
+  apply:
+    needs: [detect-changes, plan, apply-shared]
+    if: |
+      always() &&
+      (needs.plan.result == 'success') &&
+      (needs.apply-shared.result == 'success' || needs.apply-shared.result == 'skipped') &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+        exclude:
+          - environment: shared
+    concurrency:
+      group: terraform-${{ matrix.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.12"
+
+      - name: Terraform Init
+        working-directory: IaC/terraform/environments/${{ matrix.environment }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: IaC/terraform/environments/${{ matrix.environment }}
+        run: terraform apply -auto-approve

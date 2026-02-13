@@ -1,6 +1,6 @@
 resource "google_sql_database_instance" "main" {
   project          = var.project_id
-  name             = "pocket-av-db"
+  name             = "pocket-av-db-${var.env_name}"
   region           = var.region
   database_version = var.db_version
 
@@ -10,7 +10,7 @@ resource "google_sql_database_instance" "main" {
 
     ip_configuration {
       ipv4_enabled                                  = false
-      private_network                               = "projects/${var.project_id}/global/networks/default"
+      private_network                               = var.vpc_network
       enable_private_path_for_google_cloud_services = true
     }
 
@@ -21,8 +21,6 @@ resource "google_sql_database_instance" "main" {
   }
 
   deletion_protection = true
-
-  depends_on = [google_service_networking_connection.private_vpc]
 }
 
 resource "google_sql_database" "keycache" {

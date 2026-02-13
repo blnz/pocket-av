@@ -1,6 +1,6 @@
 resource "google_cloud_run_v2_service" "keycache_server" {
   project  = var.project_id
-  name     = "keycache-server"
+  name     = "keycache-server-${var.env_name}"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
@@ -52,7 +52,6 @@ resource "google_cloud_run_v2_service" "keycache_server" {
   }
 
   depends_on = [
-    google_project_service.run,
     google_secret_manager_secret_version.db_password,
   ]
 }
