@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    volumes:
+      - ./db/dumps:/app-db-dumps
+      - ./db/initDB.sql:/docker-entrypoint-initdb.d/initDB.sql
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+
+  syncserver:
+    build: .
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    environment:
+      - PGHOST=db
+      - PGDATABASE=postgres
+      - PGUSER=ssdb
+      - PGPASSWORD=ssdb

@@ -1,0 +1,3 @@
+packages:
+  - packages/keycache-chrome
+  - packages/keycache-server
