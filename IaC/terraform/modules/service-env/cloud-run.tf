@@ -4,6 +4,8 @@ resource "google_cloud_run_v2_service" "keycache_server" {
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
+  scaling {}
+
   template {
     service_account = google_service_account.keycache_server.email
 
