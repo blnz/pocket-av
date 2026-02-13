@@ -1,0 +1,27 @@
+name: GCP Auth Test
+
+on:
+  push:
+    branches: [bill/avapp-01]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  auth-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Verify GCP authentication
+        run: |
+          gcloud projects describe pocket-av
+          echo "GCP authentication successful!"

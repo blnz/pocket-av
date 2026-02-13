@@ -1,0 +1,8 @@
+project_id     = "pocket-av"
+region         = "us-central1"
+env_name       = "staging"
+connector_cidr = "10.8.0.16/28"
+db_tier        = "db-f1-micro"
+db_version     = "POSTGRES_16"
+db_name        = "keycache"
+db_user        = "ssdb"
