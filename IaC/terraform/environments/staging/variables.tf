@@ -13,6 +13,11 @@ variable "env_name" {
   type        = string
 }
 
+variable "connector_cidr" {
+  description = "IP CIDR range for the VPC Access connector (/28)"
+  type        = string
+}
+
 variable "db_tier" {
   description = "Cloud SQL machine tier"
   type        = string

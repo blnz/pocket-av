@@ -33,6 +33,11 @@ variable "db_user" {
   type        = string
 }
 
+variable "connector_cidr" {
+  description = "IP CIDR range for the VPC Access connector (must be /28, unique per connector)"
+  type        = string
+}
+
 variable "vpc_network" {
   description = "VPC network self-link or URI"
   type        = string
