@@ -1,0 +1,11 @@
+{
+  "name": "pocket-av",
+  "private": true,
+  "scripts": {
+    "dev:chrome": "pnpm --filter keycache-chrome dev",
+    "dev:server": "pnpm --filter keycache-server dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
