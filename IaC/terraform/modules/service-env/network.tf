@@ -1,6 +1,6 @@
 resource "google_vpc_access_connector" "connector" {
   project       = var.project_id
-  name          = "cloudrun-connector-${var.env_name}"
+  name          = "run-connector-${var.env_name}"
   region        = var.region
   network       = "default"
   ip_cidr_range = var.connector_cidr
