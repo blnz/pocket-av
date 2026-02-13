@@ -119,6 +119,13 @@ resource "google_service_account_iam_member" "wif_binding" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/blnz/${var.github_repo}"
 }
 
+# Terraform state bucket access for github-actions SA
+resource "google_storage_bucket_iam_member" "github_actions_tfstate" {
+  bucket = "pocket-av-tfstate"
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.github_actions.email}"
+}
+
 # Deploy roles for github-actions SA
 resource "google_project_iam_member" "github_actions_run_admin" {
   project = var.project_id
