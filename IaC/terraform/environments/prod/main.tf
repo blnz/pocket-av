@@ -18,7 +18,7 @@ module "env" {
   db_name    = var.db_name
   db_user    = var.db_user
 
-  connector_cidr = var.connector_cidr
+  connector_cidr                 = var.connector_cidr
   vpc_network                    = data.terraform_remote_state.shared.outputs.vpc_network
   private_services_connection_id = data.terraform_remote_state.shared.outputs.private_vpc_connection_id
 }
