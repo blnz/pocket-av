@@ -1,0 +1,8 @@
+project_id     = "pocket-av"
+project_number = "148242134126"
+region         = "us-central1"
+github_repo    = "pocket-av"
+db_tier        = "db-f1-micro"
+db_version     = "POSTGRES_16"
+db_name        = "keycache"
+db_user        = "ssdb"
