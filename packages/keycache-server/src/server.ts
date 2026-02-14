@@ -2,6 +2,8 @@ import express, { type Express } from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { router } from "./routes.js";
+import { runMigrations } from "./migrate.js";
+import { db } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +21,8 @@ app.get("/", (_req, res) => {
 app.use(router);
 
 export { app };
+
+await runMigrations(db);
 
 const server = app.listen(PORT, () => {
   console.log("syncserver listening on port %d", PORT);
