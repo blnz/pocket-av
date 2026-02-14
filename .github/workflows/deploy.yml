@@ -1,0 +1,71 @@
+name: Deploy keycache-server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/keycache-server/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE: us-central1-docker.pkg.dev/pocket-av/pocket-av/keycache-server
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - id: meta
+        run: echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        working-directory: packages/keycache-server
+        run: |
+          docker build -t "$IMAGE:${{ steps.meta.outputs.tag }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ steps.meta.outputs.tag }}"
+          docker push "$IMAGE:latest"
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.environment)) || fromJson('["staging","prod"]') }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run services update "keycache-server-${{ matrix.environment }}" \
+            --image "$IMAGE:${{ needs.build-and-push.outputs.image_tag }}" \
+            --region us-central1 \
+            --project pocket-av
