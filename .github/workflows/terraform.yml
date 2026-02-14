@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       environments: ${{ steps.set-envs.outputs.environments }}
+      env_environments: ${{ steps.set-envs.outputs.env_environments }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,10 +42,13 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo 'environments=["${{ inputs.environment }}"]' >> "$GITHUB_OUTPUT"
+            if [[ "${{ inputs.environment }}" != "shared" ]]; then
+              echo 'env_environments=["${{ inputs.environment }}"]' >> "$GITHUB_OUTPUT"
+            else
+              echo 'env_environments=[]' >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
-
-          envs="[]"
 
           if [[ "${{ github.event_name }}" == "push" ]]; then
             changed=$(git diff --name-only HEAD~1 HEAD -- IaC/terraform/ || true)
@@ -69,20 +73,22 @@ jobs:
             esac
           done <<< "$changed"
 
-          result=()
-          [[ "$shared" == "true" ]] && result+=("shared")
-          [[ "$prod" == "true" ]] && result+=("prod")
-          [[ "$staging" == "true" ]] && result+=("staging")
+          # All environments (for plan)
+          all=()
+          [[ "$shared" == "true" ]] && all+=("shared")
+          [[ "$prod" == "true" ]] && all+=("prod")
+          [[ "$staging" == "true" ]] && all+=("staging")
 
-          # Build JSON array
-          json="["
-          for i in "${!result[@]}"; do
-            [[ $i -gt 0 ]] && json+=","
-            json+="\"${result[$i]}\""
-          done
-          json+="]"
-
+          json="["; for i in "${!all[@]}"; do [[ $i -gt 0 ]] && json+=","; json+="\"${all[$i]}\""; done; json+="]"
           echo "environments=$json" >> "$GITHUB_OUTPUT"
+
+          # Non-shared environments (for apply)
+          envs=()
+          [[ "$prod" == "true" ]] && envs+=("prod")
+          [[ "$staging" == "true" ]] && envs+=("staging")
+
+          json="["; for i in "${!envs[@]}"; do [[ $i -gt 0 ]] && json+=","; json+="\"${envs[$i]}\""; done; json+="]"
+          echo "env_environments=$json" >> "$GITHUB_OUTPUT"
 
   # --------------------------------------------------------------------------
   # Plan
@@ -165,9 +171,7 @@ jobs:
   # --------------------------------------------------------------------------
   apply-shared:
     needs: [detect-changes, plan]
-    if: |
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      contains(fromJson(needs.detect-changes.outputs.environments), 'shared')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
       group: terraform-shared
@@ -198,15 +202,14 @@ jobs:
     if: |
       always() &&
       (needs.plan.result == 'success') &&
-      (needs.apply-shared.result == 'success' || needs.apply-shared.result == 'skipped') &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (needs.apply-shared.result == 'success') &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.detect-changes.outputs.env_environments != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
-        exclude:
-          - environment: shared
+        environment: ${{ fromJson(needs.detect-changes.outputs.env_environments) }}
     concurrency:
       group: terraform-${{ matrix.environment }}
       cancel-in-progress: false
